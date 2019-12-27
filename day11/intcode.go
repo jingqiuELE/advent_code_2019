@@ -59,9 +59,9 @@ func main() {
 		log.Fatal("Failed to get program from input file!", err)
 	}
 
-	panels := make([][]int, 201)
+	panels := make([][]int, 200)
 	for i, _ := range panels {
-		panels[i] = make([]int, 201)
+		panels[i] = make([]int, 200)
 	}
 	painted = make(map[Position]bool)
 
@@ -70,7 +70,7 @@ func main() {
 		Y: 100,
 	}
 	facing := UP
-	panels[pos.X][pos.Y] = 1
+	panels[pos.Y][pos.X] = 1
 
 	input := make(chan int, 1)
 	output := make(chan int, 2)
@@ -92,11 +92,11 @@ func main() {
 				break
 			}
 			fmt.Printf("Color=%v, Dir=%v\n", color, direction)
-			panels[pos.X][pos.Y] = color
+			panels[pos.Y][pos.X] = color
 			painted[pos] = true
 			pos, facing = calculateNewPos(pos, facing, direction)
 			fmt.Println("NewPos:", pos)
-			input <- panels[pos.X][pos.Y]
+			input <- panels[pos.Y][pos.X]
 		}
 	}
 
