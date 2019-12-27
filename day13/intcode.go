@@ -53,14 +53,15 @@ func main() {
 
 	input := make(chan int, 1)
 	output := make(chan int, 3)
+	games := make(chan map[Position]int)
 
 	go runProgram(program, input, output)
-	go runControl(input)
+	go playGames(input, games)
 
 	panel := make(map[Position]int)
 	var score int
 
-	tick := time.Tick(time.Second)
+	tick := time.Tick(10 * time.Millisecond)
 	done := false
 	max_y := 0
 	max_x := 0
@@ -103,6 +104,7 @@ func main() {
 			}
 		case <-tick:
 			refreshScreen(panel, max_y, max_x)
+			games <- panel
 		}
 	}
 	fmt.Println("score=", score)
@@ -141,8 +143,30 @@ func refreshScreen(panel map[Position]int, max_y int, max_x int) {
 	}
 }
 
-func playGames(control chan int, panel map[Position]int) {
+func playGames(control chan int, pchannel chan map[Position]int) {
+	var target Position
+	var padel Position
 
+	for {
+		select {
+		case panel := <-pchannel:
+			for pos, tile := range panel {
+				if tile == 4 {
+					target = pos
+				} else if tile == 3 {
+					padel = pos
+				}
+			}
+		}
+
+		if padel.X < target.X {
+			control <- 1
+		} else if padel.X > target.X {
+			control <- -1
+		} else {
+			control <- 0
+		}
+	}
 }
 
 func runControl(input chan int) {
