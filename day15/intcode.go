@@ -37,12 +37,19 @@ const (
 	EAST
 )
 
+const (
+	NORMAL = iota
+	WALL
+	OXGEN_ROOM
+	VISITED
+)
+
 type Vertex struct {
 	Pos        Position
 	Direction  int
 	MinPath    int
 	Visited    bool
-	Target     bool
+	Property   int
 	Neighbours []Position
 }
 
@@ -98,11 +105,99 @@ func main() {
 	start.Visited = true
 	BFS(start, vmap, control, output)
 
+	var oxgen *Vertex
 	for _, v := range vmap {
-		if v.Target == true {
+		if v.Property == OXGEN_ROOM {
 			fmt.Println("MinPath to target:", v.MinPath)
+			oxgen = v
+		}
+		v.Visited = false
+	}
+
+	printMaze(vmap)
+
+	time := spreadCount(oxgen, vmap)
+	fmt.Println("Time needed to fill all rooms with oxgen:", time)
+}
+
+func printMaze(vmap map[Position]*Vertex) {
+	var minX, maxX, minY, maxY int
+
+	for pos, _ := range vmap {
+		if pos.X > maxX {
+			maxX = pos.X
+		}
+		if pos.X < minX {
+			minX = pos.X
+		}
+		if pos.Y > maxY {
+			maxY = pos.Y
+		}
+		if pos.Y < minY {
+			minY = pos.Y
 		}
 	}
+
+	var frame [][]int
+	frame = make([][]int, maxY-minY+1)
+	for i, _ := range frame {
+		frame[i] = make([]int, maxX-minX+1)
+	}
+
+	for _, v := range vmap {
+		var x, y int
+		x = v.Pos.X - minX
+		y = v.Pos.Y - minY
+		if v.Visited == false {
+			frame[y][x] = v.Property
+		} else {
+			frame[y][x] = VISITED
+		}
+	}
+
+	for _, line := range frame {
+		for _, c := range line {
+			switch c {
+			case WALL:
+				fmt.Printf("#")
+			case NORMAL:
+				fmt.Printf(" ")
+			case OXGEN_ROOM:
+				fmt.Printf("O")
+			case VISITED:
+				fmt.Printf("+")
+			}
+		}
+		fmt.Println("")
+	}
+}
+
+func spreadCount(start *Vertex, vmap map[Position]*Vertex) int {
+	var queue []*Vertex
+	var count int
+
+	start.Visited = true
+	queue = append(queue, start)
+
+	count = -1
+	for len(queue) > 0 {
+		var nextQueue []*Vertex
+		for _, v := range queue {
+			for _, p := range v.Neighbours {
+				n := vmap[p]
+				if n == nil {
+					log.Fatal("Couldn't find vertex for pos ", p)
+				}
+				if n.Visited == false && n.Property != WALL {
+					n.Visited = true
+					nextQueue = append(nextQueue, n)
+				}
+			}
+		}
+		queue = nextQueue
+		count++
+	}
+	return count
 }
 
 func BFS(current *Vertex, vmap map[Position]*Vertex, control chan int, output chan int) {
@@ -126,14 +221,16 @@ func BFS(current *Vertex, vmap map[Position]*Vertex, control chan int, output ch
 			switch feedback {
 			case 0:
 				fmt.Printf("hit wall:%v,", n.Pos)
+				n.Property = WALL
 			case 1:
 				fmt.Printf("add %v,", n.Pos)
+				n.Property = NORMAL
 				queue = append(queue, n)
 				control <- oppositeDirection(i + 1)
 				<-output
 			case 2:
 				fmt.Printf("add %v,", n.Pos)
-				n.Target = true
+				n.Property = OXGEN_ROOM
 				queue = append(queue, n)
 				control <- oppositeDirection(i + 1)
 				<-output
