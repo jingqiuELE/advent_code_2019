@@ -14,7 +14,7 @@ import (
 
 func main() {
 	var dataFile string
-	var basePattern = []int{0, 1, 0, -1}
+	//var basePattern = []int{0, 1, 0, -1}
 
 	flag.StringVarP(&dataFile, "data file name", "f", "", "")
 	flag.Parse()
@@ -23,9 +23,59 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to get input file!", err)
 	}
-	result := FFT(input, basePattern, 100)
-	fmt.Println("result=", result)
 
+	//result := FFT(input, basePattern, 100)
+	//fmt.Println("result=", result)
+
+	message := FFTExtract(input, 10000, 100)
+	fmt.Println("message=", message)
+
+}
+
+/* Extract 8 number message from the bottom half of FFT result.
+ * The bottom half of FFT pattern matrix is special with all 0 followed by all 1.
+ * As such, we can calculate messages residing in this bit position.
+ */
+func FFTExtract(input []int, repeatTimes int, iteration int) []int {
+	var skipBits int
+	var realInput []int
+
+	for i := 0; i < 7; i++ {
+		skipBits *= 10
+		skipBits += input[i]
+	}
+	fmt.Println("skipBits=", skipBits)
+	l := len(input)*repeatTimes - skipBits
+	fmt.Println("len of l=", l)
+
+	times := l / len(input)
+	start := len(input) - l%len(input)
+
+	fmt.Println("start=", start)
+	realInput = append(realInput, input[start:]...)
+
+	for i := 0; i < times; i++ {
+		realInput = append(realInput, input...)
+	}
+
+	fmt.Println("input=", input)
+	fmt.Println("len of realInput=", len(realInput))
+
+	for i := 0; i < iteration; i++ {
+		output := make([]int, l)
+		sum := 0
+		for _, d := range realInput {
+			sum += d
+		}
+		output[0] = sum % 10
+		for j := 1; j < l; j++ {
+			sum = sum - realInput[j-1]
+			output[j] = sum % 10
+		}
+		realInput = output
+	}
+
+	return realInput[:8]
 }
 
 func FFT(input []int, basePattern []int, iteration int) []int {
