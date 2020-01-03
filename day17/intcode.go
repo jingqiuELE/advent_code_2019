@@ -35,6 +35,52 @@ type Position struct {
 	Y int
 }
 
+const (
+	SCAFF = iota
+	CROSS
+)
+
+const (
+	FORWARD = iota
+	TURN_RIGHT
+	TURN_LEFT
+)
+
+const (
+	NORTH = iota
+	SOUTH
+	EAST
+	WEST
+)
+
+type Vertex struct {
+	Pos        Position
+	Visited    bool
+	Property   int
+	Neighbours []Position
+}
+
+func NewVertex(pos Position) *Vertex {
+	v := Vertex{
+		Pos: pos,
+	}
+	v.Neighbours = make([]Position, 4)
+	for i, _ := range v.Neighbours {
+		v.Neighbours[i] = pos
+		switch i {
+		case NORTH:
+			v.Neighbours[i].Y--
+		case SOUTH:
+			v.Neighbours[i].Y++
+		case WEST:
+			v.Neighbours[i].X--
+		case EAST:
+			v.Neighbours[i].X++
+		}
+	}
+	return &v
+}
+
 func main() {
 	var dataFile string
 
@@ -83,19 +129,199 @@ func main() {
 				continue
 			}
 			if frame[y][x] == '#' {
-				//fmt.Printf("(%v, %v) ", y, x)
-				//fmt.Printf("(%v, %v)=%v, ", y+1, x, frame[y+1][x])
 				if frame[y+1][x] == '#' && frame[y-1][x] == '#' &&
 					frame[y][x+1] == '#' && frame[y][x-1] == '#' {
-					frame[y][x] = int('O')
+					frame[y][x] = 'O'
 					alignment := y * x
 					sum += alignment
 				}
 			}
 		}
 	}
-
 	fmt.Println("sum of alignment=", sum)
+	dumpVideo(frame)
+
+	var start *Vertex
+	var dir int
+	vmap := make(map[Position]*Vertex)
+	for y, line := range frame {
+		for x, _ := range line {
+			var v *Vertex
+			if frame[y][x] != '.' {
+				p := Position{
+					Y: y,
+					X: x,
+				}
+				v = NewVertex(p)
+				vmap[p] = v
+			}
+
+			switch frame[y][x] {
+			case '^':
+				start = v
+				dir = NORTH
+			case '#':
+				v.Property = SCAFF
+			case 'O':
+				v.Property = CROSS
+			}
+		}
+	}
+
+	steps := DFS(vmap, start, dir)
+	fmt.Println(steps)
+	str := stringSteps(steps)
+	fmt.Println("result:", str)
+
+	mainRoutine := "A,B,A,B,A,C,B,C,A,C"
+	funcA := "R4,L10,L10"
+	funcB := "L8,R12,R10,R4"
+	funcC := "L8,L8,R10,R4"
+	wantFeed := "n"
+
+	control_1 := make(chan int, 1)
+	output_1 := make(chan int, 1)
+	program[0] = 2
+
+	go runProgram(program, control_1, output_1)
+	var command string
+	for {
+		select {
+		case c := <-output_1:
+			fmt.Printf("%c", c)
+			if c == '\n' {
+				//We got a command
+				switch command {
+				case "Main:":
+					sendControl(control_1, mainRoutine)
+				case "Function A:":
+					sendControl(control_1, funcA)
+				case "Function B:":
+					sendControl(control_1, funcB)
+				case "Function C:":
+					sendControl(control_1, funcC)
+				case "Continuous video feedread from input:":
+					sendControl(control_1, wantFeed)
+				}
+				command = ""
+			} else {
+				command = command + string(c)
+			}
+		}
+	}
+
+	result := <-output_1
+	fmt.Println("result:", result)
+}
+
+func sendControl(control chan int, data string) {
+	fmt.Println("sending:", data)
+	for _, c := range data {
+		control <- int(c)
+	}
+	control <- '\n'
+}
+
+func stringSteps(steps []int) string {
+	var result, pending_action string
+	var counter int
+
+	counter = 0
+
+	for _, v := range steps {
+		switch v {
+		case TURN_RIGHT:
+			result = result + pending_action + strconv.Itoa(counter)
+			result += ", "
+			pending_action = "R"
+			counter = 0
+		case TURN_LEFT:
+			result = result + pending_action + strconv.Itoa(counter)
+			result += ", "
+			pending_action = "L"
+			counter = 0
+		case FORWARD:
+			counter++
+		}
+	}
+	result = result + pending_action + strconv.Itoa(counter)
+	return result
+}
+
+func DFS(vmap map[Position]*Vertex, start *Vertex, dir int) []int {
+	var steps []int
+
+	start.Visited = true
+	p := start.Neighbours[dir]
+	if vmap[p] != nil {
+		/* Favour straght forward direction first. */
+		n := vmap[p]
+		if n.Visited == false || n.Property == CROSS {
+			steps = append(steps, FORWARD)
+			remaining := DFS(vmap, vmap[p], dir)
+			steps = append(steps, remaining...)
+		}
+	} else {
+		for i, p := range start.Neighbours {
+			if vmap[p] != nil {
+				if vmap[p].Visited == false || vmap[p].Property == CROSS {
+					action := getAction(dir, i)
+					steps = append(steps, action, FORWARD)
+					remaining := DFS(vmap, vmap[p], i)
+					steps = append(steps, remaining...)
+				}
+			}
+		}
+	}
+	return steps
+}
+
+func getAction(dir int, ndir int) int {
+	fmt.Printf("dir=%v, ndir=%v\n", dir, ndir)
+	switch dir {
+	case NORTH:
+		switch ndir {
+		case WEST:
+			return TURN_LEFT
+		case EAST:
+			return TURN_RIGHT
+		default:
+			log.Fatal("illegal case!")
+			return FORWARD
+		}
+	case SOUTH:
+		switch ndir {
+		case WEST:
+			return TURN_RIGHT
+		case EAST:
+			return TURN_LEFT
+		default:
+			log.Fatal("illegal case!")
+		}
+	case WEST:
+		switch ndir {
+		case NORTH:
+			return TURN_RIGHT
+		case SOUTH:
+			return TURN_LEFT
+		default:
+			log.Fatal("illegal case!")
+		}
+	case EAST:
+		switch ndir {
+		case NORTH:
+			return TURN_LEFT
+		case SOUTH:
+			return TURN_RIGHT
+		default:
+			log.Fatal("illegal case!")
+		}
+	}
+	log.Fatal("Should never get here!")
+	return -1
+}
+
+func dumpVideo(frame [][]int) {
 	for _, line := range frame {
 		for _, c := range line {
 			fmt.Printf("%c", rune(c))
@@ -107,6 +333,7 @@ func main() {
 func runProgram(program []int, input chan int, output chan int) {
 	p := make([]int, len(program)+1024*4)
 	copy(p, program)
+	fmt.Println("p[0]=", p[0])
 
 	relative_base := 0
 	i := 0
@@ -126,8 +353,10 @@ func runProgram(program []int, input chan int, output chan int) {
 			p[rpos] = param0 * param1
 			i += 4
 		case STORE:
+			fmt.Println("read from input:")
 			rpos := loadPos(p[i+1], pmode[0], relative_base)
 			p[rpos] = <-input
+			fmt.Println("got:", p[rpos])
 			i += 2
 		case LOAD:
 			param0 := loadParam(p[i+1], pmode[0], relative_base, p)
