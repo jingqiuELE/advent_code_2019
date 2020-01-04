@@ -172,11 +172,10 @@ func main() {
 	fmt.Println(steps)
 	str := stringSteps(steps)
 	fmt.Println("result:", str)
-
 	mainRoutine := "A,B,A,B,A,C,B,C,A,C"
-	funcA := "R4,L10,L10"
-	funcB := "L8,R12,R10,R4"
-	funcC := "L8,L8,R10,R4"
+	funcA := "R,4,L,10,L,10"
+	funcB := "L,8,R,12,R,10,R,4"
+	funcC := "L,8,L,8,R,10,R,4"
 	wantFeed := "n"
 
 	control_1 := make(chan int, 1)
@@ -186,32 +185,31 @@ func main() {
 	go runProgram(program, control_1, output_1)
 	var command string
 	for {
-		select {
-		case c := <-output_1:
+		c := <-output_1
+		if c < 255 {
 			fmt.Printf("%c", c)
-			if c == '\n' {
-				//We got a command
-				switch command {
-				case "Main:":
-					sendControl(control_1, mainRoutine)
-				case "Function A:":
-					sendControl(control_1, funcA)
-				case "Function B:":
-					sendControl(control_1, funcB)
-				case "Function C:":
-					sendControl(control_1, funcC)
-				case "Continuous video feedread from input:":
-					sendControl(control_1, wantFeed)
-				}
-				command = ""
-			} else {
-				command = command + string(c)
+		} else {
+			fmt.Printf("result: %v\n", c)
+		}
+		if c == '\n' {
+			//We got a command
+			switch command {
+			case "Main:":
+				sendControl(control_1, mainRoutine)
+			case "Function A:":
+				sendControl(control_1, funcA)
+			case "Function B:":
+				sendControl(control_1, funcB)
+			case "Function C:":
+				sendControl(control_1, funcC)
+			case "Continuous video feed?":
+				sendControl(control_1, wantFeed)
 			}
+			command = ""
+		} else {
+			command = command + string(c)
 		}
 	}
-
-	result := <-output_1
-	fmt.Println("result:", result)
 }
 
 func sendControl(control chan int, data string) {
@@ -233,12 +231,12 @@ func stringSteps(steps []int) string {
 		case TURN_RIGHT:
 			result = result + pending_action + strconv.Itoa(counter)
 			result += ", "
-			pending_action = "R"
+			pending_action = "R,"
 			counter = 0
 		case TURN_LEFT:
 			result = result + pending_action + strconv.Itoa(counter)
 			result += ", "
-			pending_action = "L"
+			pending_action = "L,"
 			counter = 0
 		case FORWARD:
 			counter++
@@ -331,7 +329,7 @@ func dumpVideo(frame [][]int) {
 }
 
 func runProgram(program []int, input chan int, output chan int) {
-	p := make([]int, len(program)+1024*4)
+	p := make([]int, len(program)+1024*8)
 	copy(p, program)
 	fmt.Println("p[0]=", p[0])
 
@@ -353,10 +351,8 @@ func runProgram(program []int, input chan int, output chan int) {
 			p[rpos] = param0 * param1
 			i += 4
 		case STORE:
-			fmt.Println("read from input:")
 			rpos := loadPos(p[i+1], pmode[0], relative_base)
 			p[rpos] = <-input
-			fmt.Println("got:", p[rpos])
 			i += 2
 		case LOAD:
 			param0 := loadParam(p[i+1], pmode[0], relative_base, p)
