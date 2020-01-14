@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	flag "github.com/spf13/pflag"
@@ -19,6 +20,11 @@ type Vertex struct {
 	Value      int
 	Pos        Position
 	Neighbours []*Vertex
+}
+
+type Record struct {
+	steps int
+	path  []int
 }
 
 func main() {
@@ -41,16 +47,22 @@ func main() {
 		}
 	}
 
-	dataBase := make(map[int]map[string]int)
-	shortest_path := calculatePath(vertexes, start, "", dataBase)
-	fmt.Println("shortest path=", shortest_path)
+	dataBase := make(map[string]map[string]Record)
+	shortestSteps, shortestPath := calculatePath(vertexes, start, "", dataBase)
+	fmt.Printf("shortestSteps=%v\n", shortestSteps)
+	fmt.Printf("shortestPath=")
+	for _, c := range shortestPath {
+		fmt.Printf("%c", c)
+	}
+	fmt.Println("")
 }
 
 const DISTANCE = ('A' - 'a')
 
 func calculatePath(vertexes []*Vertex, start []*Vertex,
-	holdKeys string, dataBase map[int]map[string]int) int {
-	var minPath int
+	holdKeys string, dataBase map[string]map[string]Record) (int, []int) {
+	var minSteps int
+	var minPath []int
 
 	var next []map[*Vertex]int
 	for i, s := range start {
@@ -67,21 +79,34 @@ func calculatePath(vertexes []*Vertex, start []*Vertex,
 	}
 	fmt.Println("")
 
-	minPath = 0
+	minSteps = 0
 	for i, nmap := range next {
 		for v, pathLen := range nmap {
+			var path []int
+
 			fmt.Printf("move to %c, pathLen=%v\n", v.Value, pathLen)
-			dmap := dataBase[v.Value]
+
+			newStart := make([]*Vertex, len(start))
+			copy(newStart, start)
+			for j, _ := range newStart {
+				if j == i {
+					newStart[j] = v
+				}
+			}
+			state := composeState(newStart)
+			fmt.Println("state=", state)
+			dmap := dataBase[state]
 			if dmap == nil {
-				dmap = make(map[string]int)
-				dataBase[v.Value] = dmap
+				dmap = make(map[string]Record)
+				dataBase[state] = dmap
 			}
 			keys := composeKeys(holdKeys, v.Value)
 			fmt.Println("keys=", keys)
 			history, ok := dmap[keys]
 			if ok {
 				fmt.Println("hit dataBase:", history)
-				pathLen += history
+				pathLen += history.steps
+				path = history.path
 			} else {
 				var gate, key Vertex
 				changed := false
@@ -94,31 +119,46 @@ func calculatePath(vertexes []*Vertex, start []*Vertex,
 				key = *v
 				v.Value = int('.')
 
-				newStart := make([]*Vertex, len(start))
-				copy(newStart, start)
-				for j, _ := range newStart {
-					if j == i {
-						newStart[j] = v
-					}
-					fmt.Printf("newStart[%v]: %c\n", j, newStart[j].Value)
+				remainingSteps, remainingPath := calculatePath(vertexes, newStart, keys, dataBase)
+				rc := Record{
+					steps: remainingSteps,
+					path:  remainingPath,
 				}
-
-				remainingSteps := calculatePath(vertexes, newStart, keys, dataBase)
-				dmap[keys] = remainingSteps
+				dmap[keys] = rc
 				pathLen += remainingSteps
 				if changed {
 					*gv = gate
 				}
 				*v = key
-				fmt.Printf("after recursion at %c keys[%s]: pathLen=%v\n", v.Value, keys, pathLen)
+				fmt.Printf("recursion at %c: pathLen=%v\n", v.Value, pathLen)
+				fmt.Printf("steps so far:")
+				fmt.Printf("%c", v.Value)
+				for _, c := range remainingPath {
+					fmt.Printf("%c", c)
+				}
+				fmt.Println("")
+				path = remainingPath
 			}
 
-			if minPath == 0 || pathLen < minPath {
-				minPath = pathLen
+			if minSteps == 0 || pathLen < minSteps {
+				minSteps = pathLen
+				minPath = make([]int, len(path)+1)
+				minPath[0] = v.Value
+				copy(minPath[1:], path)
 			}
 		}
 	}
-	return minPath
+	return minSteps, minPath
+}
+
+func composeState(start []*Vertex) string {
+	var s string
+	for _, v := range start {
+		sy := strconv.FormatInt(int64(v.Pos.Y), 16)
+		sx := strconv.FormatInt(int64(v.Pos.X), 16)
+		s = s + sy + sx
+	}
+	return s
 }
 
 func lookupGate(vertexes []*Vertex, value int) *Vertex {
