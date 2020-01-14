@@ -32,69 +32,102 @@ func main() {
 		log.Fatal("Failed to get maze from input file!", err)
 	}
 
-	vertexes, kmap := buildGraph(maze)
-	for key, v := range kmap {
-		fmt.Printf("key:%c, v:%v\n", key, v)
+	vertexes := buildGraph(maze)
+
+	var start []*Vertex
+	for _, v := range vertexes {
+		if v.Value == '@' {
+			start = append(start, v)
+		}
 	}
+
 	dataBase := make(map[int]map[string]int)
-	shortest_path := calculatePath(vertexes, kmap[int('@')], kmap, "", dataBase)
+	shortest_path := calculatePath(vertexes, start, "", dataBase)
 	fmt.Println("shortest path=", shortest_path)
 }
 
 const DISTANCE = ('A' - 'a')
 
-func calculatePath(vertexes []*Vertex, start *Vertex, kmap map[int]*Vertex,
+func calculatePath(vertexes []*Vertex, start []*Vertex,
 	holdKeys string, dataBase map[int]map[string]int) int {
 	var minPath int
 
-	next := BFS(start)
+	var next []map[*Vertex]int
+	for i, s := range start {
+		fmt.Printf("start[%v]: %c\n", i, s.Value)
+		nmap := BFS(s)
+		next = append(next, nmap)
+	}
+
 	fmt.Printf("next:")
-	for v, pathLen := range next {
-		fmt.Printf("%c:%v ", v.Value, pathLen)
+	for _, nmap := range next {
+		for v, pathLen := range nmap {
+			fmt.Printf("%c:%v ", v.Value, pathLen)
+		}
 	}
 	fmt.Println("")
 
 	minPath = 0
-	for v, pathLen := range next {
-		fmt.Printf("move to %c, pathLen=%v\n", v.Value, pathLen)
-		dmap := dataBase[v.Value]
-		if dmap == nil {
-			dmap = make(map[string]int)
-			dataBase[v.Value] = dmap
-		}
-		keys := composeKeys(holdKeys, v.Value)
-		fmt.Println("keys=", keys)
-		history, ok := dmap[keys]
-		if ok {
-			fmt.Println("hit dataBase:", history)
-			pathLen += history
-		} else {
-			var gate, key Vertex
-			changed := false
-			gv := kmap[v.Value+DISTANCE]
-			if gv != nil {
-				gate = *gv
-				gv.Value = int('.')
-				changed = true
+	for i, nmap := range next {
+		for v, pathLen := range nmap {
+			fmt.Printf("move to %c, pathLen=%v\n", v.Value, pathLen)
+			dmap := dataBase[v.Value]
+			if dmap == nil {
+				dmap = make(map[string]int)
+				dataBase[v.Value] = dmap
 			}
-			key = *v
-			v.Value = int('.')
-			remainingSteps := calculatePath(vertexes, v, kmap, keys, dataBase)
-			dmap[keys] = remainingSteps
-			pathLen += remainingSteps
-			if changed {
-				//Restore the kmap
-				*gv = gate
-			}
-			*v = key
-			fmt.Printf("after recurtion at %c: pathLen=%v\n", v.Value, pathLen)
-		}
+			keys := composeKeys(holdKeys, v.Value)
+			fmt.Println("keys=", keys)
+			history, ok := dmap[keys]
+			if ok {
+				fmt.Println("hit dataBase:", history)
+				pathLen += history
+			} else {
+				var gate, key Vertex
+				changed := false
+				gv := lookupGate(vertexes, v.Value+DISTANCE)
+				if gv != nil {
+					gate = *gv
+					gv.Value = int('.')
+					changed = true
+				}
+				key = *v
+				v.Value = int('.')
 
-		if minPath == 0 || pathLen < minPath {
-			minPath = pathLen
+				newStart := make([]*Vertex, len(start))
+				copy(newStart, start)
+				for j, _ := range newStart {
+					if j == i {
+						newStart[j] = v
+					}
+					fmt.Printf("newStart[%v]: %c\n", j, newStart[j].Value)
+				}
+
+				remainingSteps := calculatePath(vertexes, newStart, keys, dataBase)
+				dmap[keys] = remainingSteps
+				pathLen += remainingSteps
+				if changed {
+					*gv = gate
+				}
+				*v = key
+				fmt.Printf("after recursion at %c keys[%s]: pathLen=%v\n", v.Value, keys, pathLen)
+			}
+
+			if minPath == 0 || pathLen < minPath {
+				minPath = pathLen
+			}
 		}
 	}
 	return minPath
+}
+
+func lookupGate(vertexes []*Vertex, value int) *Vertex {
+	for _, v := range vertexes {
+		if v.Value == value {
+			return v
+		}
+	}
+	return nil
 }
 
 func composeKeys(current string, next int) string {
@@ -119,8 +152,8 @@ func BFS(start *Vertex) map[*Vertex]int {
 	}
 	var queue []PV
 
+	nmap := make(map[*Vertex]int)
 	visited := make(map[*Vertex]bool)
-	next := make(map[*Vertex]int)
 
 	queue = append(queue, PV{start, 0})
 
@@ -137,13 +170,13 @@ func BFS(start *Vertex) map[*Vertex]int {
 				//If we found a gate, don't traverse behind the gate
 				continue
 			} else if n.Value >= 'a' && n.Value <= 'z' {
-				next[n] = v.pathLen + 1
+				nmap[n] = v.pathLen + 1
 			} else {
 				queue = append(queue, PV{n, v.pathLen + 1})
 			}
 		}
 	}
-	return next
+	return nmap
 }
 
 func buildMaze(dataFile string) ([][]int, error) {
@@ -172,13 +205,11 @@ func buildMaze(dataFile string) ([][]int, error) {
 	return maze, err
 }
 
-func buildGraph(maze [][]int) ([]*Vertex, map[int]*Vertex) {
-	var kmap map[int]*Vertex
+func buildGraph(maze [][]int) []*Vertex {
 	var vmap map[Position]*Vertex
 	var vertexes []*Vertex
 
 	vmap = make(map[Position]*Vertex)
-	kmap = make(map[int]*Vertex)
 
 	for y, l := range maze {
 		for x, c := range l {
@@ -191,9 +222,6 @@ func buildGraph(maze [][]int) ([]*Vertex, map[int]*Vertex) {
 			}
 			v := NewVertex(p, c)
 			vmap[p] = v
-			if c != int('.') {
-				kmap[c] = v
-			}
 			vertexes = append(vertexes, v)
 		}
 	}
@@ -203,7 +231,7 @@ func buildGraph(maze [][]int) ([]*Vertex, map[int]*Vertex) {
 		v.AddNeighbours(vmap)
 	}
 
-	return vertexes, kmap
+	return vertexes
 }
 
 func NewVertex(p Position, c int) *Vertex {
