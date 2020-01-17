@@ -74,30 +74,39 @@ func main() {
 		fmt.Println("")
 	}
 	fmt.Println("count=", count)
+	last_start := 0
+	last_width := 0
 	for y := 50; ; y++ {
 		start := -1
-		for x := 0; ; x++ {
+		width := 0
+		for x := last_start; ; x++ {
 			pulled := scan(y, x)
 			if pulled == 1 {
-				if start == -1 {
-					start = x
-				}
-			} else {
-				if start > 0 {
-					width := x - start
-					fmt.Println("width=", width)
-					if width < 100 {
-						break
-					} else {
-						ld := scan(y+100, start)
-						rd := scan(y+100, x)
-						if ld == 1 && rd == 1 {
-							fmt.Printf("y=%v, x=%v", y, x)
-							return
-						}
-					}
-				}
+				start = x
+				break
 			}
+		}
+
+		for x := start + last_width; ; x++ {
+			pulled := scan(y, x)
+			if pulled == 0 {
+				width = x - start
+				fmt.Println("width=", width)
+				ld := scan(y+99, x-100)
+				rd := scan(y+99, x-1)
+				fmt.Printf("ld=%v, rd=%v\n", ld, rd)
+				if ld == 1 && rd == 1 {
+					fmt.Printf("y=%v, x=%v\n", y, x-100)
+					scan(946, 716)
+					return
+				}
+				break
+			}
+		}
+		last_start = start
+		last_width = width - 5
+		if last_width < 0 {
+			last_width = 0
 		}
 	}
 }
@@ -110,6 +119,7 @@ func scan(y int, x int) int {
 	control <- x
 	control <- y
 	pulled := <-output
+	fmt.Printf("%v\n", pulled)
 	return pulled
 }
 
@@ -183,7 +193,6 @@ func runProgram(program []int, input chan int, output chan int) {
 			relative_base += param0
 			i += 2
 		case HALT:
-			fmt.Println("HALT")
 			close(output)
 			return
 		default:
