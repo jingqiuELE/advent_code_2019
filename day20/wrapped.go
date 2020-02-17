@@ -15,9 +15,17 @@ type Position struct {
 	X int
 }
 
+const (
+	INNER_EDGE = iota
+	OUTER_EDGE
+	MIDDLE
+)
+
 type Vertex struct {
 	Label      string
 	Pos        Position
+	Level      int
+	Mark       int
 	Neighbours []*Vertex
 }
 
@@ -58,7 +66,7 @@ func calculatePath(vertexes []*Vertex, start *Vertex) (int, []int) {
 	return minSteps, minPath
 }
 
-func BFS(start *Vertex) map[*Vertex]int {
+func BFS(start *Vertex, vertexes []*Vertex) map[*Vertex]int {
 	type PV struct {
 		*Vertex
 		pathLen int
@@ -70,19 +78,97 @@ func BFS(start *Vertex) map[*Vertex]int {
 
 	queue = append(queue, PV{start, 0})
 
-	for len(queue) > 0 {
+	foundExit := false
+	for !foundExit && len(queue) > 0 {
 		v := queue[0]
 		queue = queue[1:]
 		visited[v.Vertex] = true
+
+		if v.IsInnerPortal() {
+			generateGraph(v)
+		}
+
 		for _, n := range v.Neighbours {
 			if visited[n] == true {
 				continue
 			}
 			nmap[n] = v.pathLen + 1
-			queue = append(queue, PV{n, v.pathLen + 1})
+			if n.Label == "ZZ" && n.Level == 0 {
+				fountExit = true
+				break
+			} else {
+				queue = append(queue, PV{n, v.pathLen + 1})
+			}
 		}
 	}
 	return nmap
+}
+
+func generateGraph(portal *Vertex, vertexes []*Vertex) {
+	var nvertexes []*Vertex
+
+	if portal.IsInnerPortal() == false {
+		log.Fatal("I can only generate graph from inner portal!")
+		return
+	}
+
+	for _, n := range vertexes {
+		if n.Label == portal.Label && n != portal {
+			start = n
+			break
+		}
+	}
+
+	visited := make(map[*Vertex]bool)
+	vmap := make(map[Position]*Vertex)
+
+	if start == nil {
+		log.Fatal("Couldn't find start point!")
+		return
+	}
+	var queue []*Vertex
+
+	queue = append(queue, start)
+
+	for len(queue) != 0 {
+		n := queue[0]
+		queue = queue[1:]
+		visited[n] = true
+		t := n.Dup()
+		t.Level++
+		vmap[t.Position] = t
+		nvertexes = append(nvertexes, t)
+
+		for _, nn := range n.Neighbours {
+			if visited[nn] == false {
+				queue = append(queue, nn)
+			}
+		}
+	}
+
+	for _, v := range vertexes {
+		dv = vmap[v.Position]
+		for _, nv := range v.Neighbours {
+			dn := vmap[nv.Position]
+			if dn == nil {
+				log.Fatal("Couldn't find duplicated vertex for postion %v", nv.Position)
+				return
+			}
+			dv.AddNeighbours(dn)
+		}
+	}
+
+	portal.AddNeighbours[vmap[start.Position]]
+
+	for _, v := range nvertexes {
+		if v.IsOuterPortal {
+			for _, n := range vertexes {
+				if n.Label == v.Label && n.Position != v.Position {
+					v.AddNeighbours(n)
+				}
+			}
+		}
+	}
 }
 
 func buildMaze(dataFile string) ([][]int, error) {
@@ -114,6 +200,7 @@ func buildMaze(dataFile string) ([][]int, error) {
 func buildGraph(maze [][]int) []*Vertex {
 	var vmap map[Position]*Vertex
 	var vertexes []*Vertex
+	var mark int
 
 	vmap = make(map[Position]*Vertex)
 
@@ -124,11 +211,19 @@ func buildGraph(maze [][]int) []*Vertex {
 					Y: y,
 					X: x,
 				}
-				label := scanLabel(maze, p)
+				label, direction := scanLabel(maze, p)
 				if label != "" {
 					fmt.Printf("got label %v at %v\n", label, p)
 				}
-				v := NewVertex(p, label)
+				on := onEdge(maze, p, direction)
+				if on {
+					mark = OUTER_EDGE
+				} else if label != "" {
+					mark = INNER_EDGE
+				} else {
+					mark = MIDDLE
+				}
+				v := NewVertex(p, label, mark)
 				vmap[p] = v
 				vertexes = append(vertexes, v)
 			}
@@ -140,17 +235,6 @@ func buildGraph(maze [][]int) []*Vertex {
 		v.AddNeighbours(vmap)
 	}
 
-	//Do a third pass to connect the portals
-	for _, v := range vertexes {
-		if v.Label != "" {
-			for _, t := range vertexes {
-				if t.Label == v.Label && t != v {
-					fmt.Printf("Appending to %v with %v\n", v, t)
-					v.Neighbours = append(v.Neighbours, t)
-				}
-			}
-		}
-	}
 	return vertexes
 }
 
@@ -200,10 +284,20 @@ func scanLabel(maze [][]int, p Position) string {
 	return ""
 }
 
-func NewVertex(p Position, c string) *Vertex {
+func onEdge(maze [][]int, p Position) bool {
+
+	if p.X == 2 || p.X == len(maze[0]-2) || p.Y == 2 || p.Y == len(maze)-2 {
+		return true
+	}
+
+	return false
+}
+
+func NewVertex(p Position, c string, on int) *Vertex {
 	return &Vertex{
-		Pos:   p,
-		Label: c,
+		Pos:    p,
+		Label:  c,
+		OnEdge: on,
 	}
 }
 
@@ -226,6 +320,29 @@ func (v *Vertex) AddNeighbours(vmap map[Position]*Vertex) {
 	n = vmap[south(v.Pos)]
 	if n != nil {
 		v.Neighbours = append(v.Neighbours, n)
+	}
+}
+
+func (v *Vertex) IsInnerPortal() bool {
+	if v.Label != "" && v.OnEdge == INNER {
+		return true
+	}
+	return false
+}
+
+func (v *Vertex) IsOuterrPortal() bool {
+	if v.Label != "" && v.OnEdge == OUTER && v.Level > 0 {
+		return true
+	}
+	return false
+}
+
+func (v *Vertex) Dup() *Vertex {
+	return &Vertex{
+		Pos:    v.Pos,
+		Label:  v.Label,
+		Level:  v.Level,
+		OnEdge: v.OnEdge,
 	}
 }
 
